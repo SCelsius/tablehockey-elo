@@ -1,4 +1,4 @@
-function elo(game, players, score, varargin)
+function statlog(game, players, score, varargin)
 
 % Use this function to log a game. 
 %
@@ -17,24 +17,16 @@ function elo(game, players, score, varargin)
 %              game, otherwise the current date and time will be logged.
 
 
-if exist('elo2.mat','file') == 2
-    load('elo2.mat')
+if exist('stats.mat','file') == 2
+    load('stats.mat')
 else
-    edata = elostruct();
+    stat_system = StatSystem();
 end
 
 
-% Create time of game
-dt = datestr(datetime('now'));
+stat_system.enterGame(game, players, score, varargin);
 
-if (~isempty(varargin))
-    dt = varargin{1};
-end
-
-
-edata.enterGame(game, players, score, dt);
-
-save('elo2.mat','edata');
+save('stats.mat','stat_system');
 
 
 
