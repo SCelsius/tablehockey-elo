@@ -1,4 +1,4 @@
-classdef (Abstract) RatingSystem < handle
+classdef (Abstract) RatingSystem < handle & matlab.mixin.Heterogeneous
     
     properties (GetAccess = public, SetAccess = private) 
         name = '';
@@ -9,6 +9,7 @@ classdef (Abstract) RatingSystem < handle
         changed = processNewGameLast(obj, type, player_ids, score, time_str, game_nr, game_log)
         changed = removeGamesAfter(obj, game_nr)
         rating = getCurrentRatings(obj, player_ids)
+        rating = getStartRatings(obj, player_ids)
         [history, game_inds] = getRatingHistory(obj, player_ids, from_game, to_game)
         ok = setParameter(obj, name, value)
         clon = clone(obj)
@@ -19,6 +20,10 @@ classdef (Abstract) RatingSystem < handle
     methods
         function obj = RatingSystem(name)
             obj.name = name;
+        end
+        
+        function name = getName(obj)
+            name = obj.name;
         end
     end
     

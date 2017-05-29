@@ -12,6 +12,18 @@ function statplot(plot, varargin)
 % 'hist'/'history' - Shows a history of ratings.
 %                        Supports options: 'players', 'fig', 'ratingSystem'
 %                                          'since', 'until', 'latest', 'xaxis'
+% 'all'/'distall'  - Plots the distribution of game results, not taking
+%                    into account which player scored what.
+%                        Supports options: 'fig', 'since', 'until', 'latest',
+%                                          'gameType', 'vs', 'vsand', 'filter'
+% 'week'/'weeks'   - Plots the rating gained/lost during the last week
+%                    (monday-sunday).
+%                        Supports options: 'players', 'fig', 'ratingSystem'
+%                                          'until', 'xaxis'
+% 'month'/'months' - Plots the rating gained/lost during the last calendar
+%                    month.
+%                        Supports options: 'players', 'fig', 'ratingSystem'
+%                                          'until', 'xaxis'
 %
 %
 % List of configurations:
@@ -23,11 +35,46 @@ function statplot(plot, varargin)
 % 'until'        - Only use data up to a selected point in time (string).
 % 'latest'       - Only use data from at most latest (number) games.
 % 'xaxis'        - Set type of xaxis, valid values are
-%                  'game', 'game_nr'/'nr'/'game_id'/'id' and 'time'.
+%                  'game', 'game_nr'/'nr'/'game_id'/'id', 'day/'days' and 'time'.
+% 'gameType'     - Only draw statistics from games of a certain type. Value
+%                  can be a single string or a cell array of strings.
+% 'vs'           - Only draw statistics from games where at least one of
+%                  these players played. Or if the value of 'vsand' is set to
+%                  true, only games where all these players played are
+%                  included. Value can be a single string, or a
+%                  cell array of strings.
+% 'vsand'        - Controls how the 'vs' argument is interpreted. Value
+%                  should be boolean, default is false.
+% 'filter'       - A function handle that further can filter which games to
+%                  collect statistics from. The filter function is applied
+%                  after all other options above, just before 'latest'. 
+%                  The function should take one argument (let's call it 'g') 
+%                  and produce a boolean output. 'g' is a structure that 
+%                  contains the following game data:
+%                  g.type         - the type of the game (string).
+%                  g.player_ids   - a matrix of the player ids of the game,
+%                                   one row for each team and one column for
+%                                   each player of the team. Note that team
+%                                   members id's could appear in any order in
+%                                   the row.
+%                  g.player_names - a cell matrix of the players' names, such
+%                                   that the id of player g.player_names{i,j}
+%                                   is g.player_ids(i,j).
+%                  g.time         - a datetime object representing the end
+%                                   time of the game.
+%                  g.score        - a vector containing the teams' scores, in
+%                                   the order the teams appear in the id
+%                                   matrix.
+%                  g.win          - an indicator vector that is 1 for the
+%                                   team that won the game (if any), 0 elsewhere.
+%                  g.tie          - an indicator vector that is 1 for each
+%                                   team that tied the game (if any), 0 elsewhere.
 
 
-
-if exist('stats.mat','file') == 2
+if length(varargin) > 1 && strcmp(varargin{1}, 'system')
+    stat_system = varargin{2};
+    varargin = varargin(3:end);
+elseif exist('stats.mat','file') == 2
     load('stats.mat')
 else
     stat_system = StatSystem();
@@ -40,6 +87,14 @@ switch(lower(plot))
         plotHistory(stat_system, varargin{:});
     case {'bar','rating'}
         plotRating(stat_system, varargin{:});
+    case {'all','distall'}
+        plotAllResultDist(stat_system, varargin{:});
+    case {'dist'}
+        plotSetupResultDist(stat_system, varargin{:});
+    case {'week','weeks'}
+        plotWeek(stat_system, varargin{:});
+    case {'month','months'}
+        plotMonth(stat_system, varargin{:});
         
     otherwise
         error('Unsupported plot: ''%s''!', plot);
@@ -50,6 +105,250 @@ end
 end
 
 
+
+
+function plotMonth(stat_system, varargin)
+
+p = inputParser;
+addParameter(p, 'players', stat_system.player_names);
+addParameter(p, 'fig', 1);
+addParameter(p, 'ratingSystem', 'total');
+addParameter(p, 'xaxis', 'game');
+addParameter(p, 'until', '3000-01-01');
+
+[ginds, ids, rating_system] = processArguments(stat_system, p, varargin);
+
+ids = ids(:);
+
+[history, ginds] = stat_system.getHistoryOfSystem(rating_system, ids, 1, max(ginds));
+starts = stat_system.getStartRatingsOfSystem(rating_system, ids);
+
+if isempty(ginds)
+    fprintf('No history!\n');
+    return;
+end
+
+
+this_year = year(datetime(stat_system.game_log.getTimeStrOfGame(ginds(end))));
+this_month = month(datetime(stat_system.game_log.getTimeStrOfGame(ginds(end))));
+
+first = length(ginds)-1;
+
+while first > 0 && year(datetime(stat_system.game_log.getTimeStrOfGame(ginds(first)))) == this_year && ...
+        month(datetime(stat_system.game_log.getTimeStrOfGame(ginds(first)))) == this_month
+    first = first-1;
+end
+
+init = zeros(length(ids),1);
+
+for i=1:length(ids)
+    if first < 1 || isnan(history(i,first))
+        init(i) = starts(i);
+    else
+        init(i) = history(i,first);
+    end
+end
+
+data = [init, history(:,first+1:end)] - kron(ones(1,length(ginds)-first+1), init);
+data(isnan(data(:,1:end-1))) = 0;
+
+if first > 0
+    ginds = ginds(first:end);
+else
+    ginds = [0, ginds(first+1:end)];
+end
+
+
+
+switch (lower(p.Results.xaxis))
+    case 'game'
+        xaxis = 0:length(ginds)-1;
+        xaxis_label = 'Game';
+    case {'game_nr','gamenr','nr','number','game_id','gameid','id'}
+        xaxis = ginds;
+        xaxis_label = 'Game ID';
+    case 'time'
+        if ginds(1) == 0
+            xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds(2:end));
+            xaxis = [xaxis{1}-1, xaxis{:}];
+        else
+            xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds);
+            xaxis = [xaxis{:}];
+        end
+        xaxis_label = 'Time';
+    case {'day','days'}
+        ind = 1;
+        cols = zeros(1,length(ginds));
+        if ginds(1) == 0
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds(2:end));
+            dts = [dts{1}-1, dts{:}];
+        else
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds);
+            dts = [dts{:}];
+        end
+        for i=1:length(ginds)-1
+            if year(dts(i)) ~= year(dts(i+1)) ||...
+                month(dts(i)) ~= month(dts(i+1)) ||...
+                day(dts(i)) ~= day(dts(i+1))
+                cols(ind) = i;
+                ind = ind+1;
+            end
+        end
+        cols(ind) = length(ginds);
+        
+        xaxis = dts(cols(1:ind));
+        xaxis_label = 'Day';
+        data = data(:,cols(1:ind));
+    otherwise
+        error('No xaxis type ''%s''!', p.Results.xaxis);
+end
+
+[~, srt] = sort(data(:,end));
+figure(p.Results.fig);
+clf;
+hold on;
+title(sprintf('%s %u of rating system ''%s''', char(month(datetime(2000, this_month, 1),'name')), this_year, rating_system));
+leg = {};
+for i=numel(ids):-1:1
+    id = ids(srt(i));
+    row = data(srt(i),:);
+    
+    if ~isnan(row(end))
+        plot(xaxis, row, 'color', getColorFromId(id));
+        leg{length(leg)+1} = stat_system.getNameOfId(id);
+    end
+end
+xlabel(xaxis_label);
+ylabel('Rating');
+l=legend(leg,'location','bestOutside');
+set(l,'fontSize',16)
+
+end
+
+
+
+
+
+
+
+
+function plotWeek(stat_system, varargin)
+
+p = inputParser;
+addParameter(p, 'players', stat_system.player_names);
+addParameter(p, 'fig', 1);
+addParameter(p, 'ratingSystem', 'total');
+addParameter(p, 'xaxis', 'game');
+addParameter(p, 'until', '3000-01-01');
+
+[ginds, ids, rating_system] = processArguments(stat_system, p, varargin);
+
+ids = ids(:);
+
+[history, ginds] = stat_system.getHistoryOfSystem(rating_system, ids, 1, max(ginds));
+starts = stat_system.getStartRatingsOfSystem(rating_system, ids);
+
+if isempty(ginds)
+    fprintf('No history!\n');
+    return;
+end
+
+
+this_year = year(datetime(stat_system.game_log.getTimeStrOfGame(ginds(end))));
+this_week = week(datetime(stat_system.game_log.getTimeStrOfGame(ginds(end))));
+
+first = length(ginds)-1;
+
+while first > 0 && year(datetime(stat_system.game_log.getTimeStrOfGame(ginds(first)))) == this_year && ...
+        week(datetime(stat_system.game_log.getTimeStrOfGame(ginds(first)))) == this_week
+    first = first-1;
+end
+
+init = zeros(length(ids),1);
+
+for i=1:length(ids)
+    if first < 1 || isnan(history(i,first))
+        init(i) = starts(i);
+    else
+        init(i) = history(i,first);
+    end
+end
+
+data = [init, history(:,first+1:end)] - kron(ones(1,length(ginds)-first+1), init);
+data(isnan(data(:,1:end-1))) = 0;
+
+if first > 0
+    ginds = ginds(first:end);
+else
+    ginds = [0, ginds(first+1:end)];
+end
+
+
+
+switch (lower(p.Results.xaxis))
+    case 'game'
+        xaxis = 0:length(ginds)-1;
+        xaxis_label = 'Game';
+    case {'game_nr','gamenr','nr','number','game_id','gameid','id'}
+        xaxis = ginds;
+        xaxis_label = 'Game ID';
+    case 'time'
+        if ginds(1) == 0
+            xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds(2:end));
+            xaxis = [xaxis{1}-1, xaxis{:}];
+        else
+            xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds);
+            xaxis = [xaxis{:}];
+        end
+        xaxis_label = 'Time';
+    case {'day','days'}
+        ind = 1;
+        cols = zeros(1,length(ginds));
+        if ginds(1) == 0
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds(2:end));
+            dts = [dts{1}-1, dts{:}];
+        else
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds);
+            dts = [dts{:}];
+        end
+        for i=1:length(ginds)-1
+            if year(dts(i)) ~= year(dts(i+1)) ||...
+                month(dts(i)) ~= month(dts(i+1)) ||...
+                day(dts(i)) ~= day(dts(i+1))
+                cols(ind) = i;
+                ind = ind+1;
+            end
+        end
+        cols(ind) = length(ginds);
+        
+        xaxis = dts(cols(1:ind));
+        xaxis_label = 'Day';
+        data = data(:,cols(1:ind));
+    otherwise
+        error('No xaxis type ''%s''!', p.Results.xaxis);
+end
+
+[~, srt] = sort(data(:,end));
+figure(p.Results.fig);
+clf;
+hold on;
+title(sprintf('Week %u %u of rating system ''%s''', this_week, this_year, rating_system));
+leg = {};
+for i=numel(ids):-1:1
+    id = ids(srt(i));
+    row = data(srt(i),:);
+    
+    if ~isnan(row(end))
+        plot(xaxis, row, 'color', getColorFromId(id));
+        leg{length(leg)+1} = stat_system.getNameOfId(id);
+    end
+end
+xlabel(xaxis_label);
+ylabel('Rating');
+l=legend(leg,'location','bestOutside');
+set(l,'fontSize',16)
+
+end
 
 
 
@@ -98,6 +397,277 @@ ylabel('Rating');
 end
 
 
+function plotAllResultDist(stat_system, varargin)
+
+p = inputParser;
+addParameter(p, 'latest', 0);
+addParameter(p, 'since', '2000-01-01 00:00:00');
+addParameter(p, 'until', '3000-01-01 00:00:00');
+addParameter(p, 'fig', 1);
+addParameter(p, 'gameType', {'single','master','double','double master'});
+addParameter(p, 'vs', stat_system.player_names);
+addParameter(p, 'vsand', false);
+addParameter(p, 'filter', @(g) true);
+
+
+[ginds] = processArguments(stat_system, p, varargin);
+
+reskeys = {};
+count = [];
+
+for gs=1:length(ginds)
+    g = ginds(gs);
+    
+    sc = sort(stat_system.game_log.getScoreOfGame(g),'descend');
+    
+    ind = 1;
+    while ind <= length(reskeys)
+        if length(reskeys{ind}) == length(sc) && sum(abs(reskeys{ind}-sc)) == 0
+            break;
+        end
+        ind = ind+1;
+    end
+    
+    if ind > length(reskeys)
+        reskeys{ind} = sc;
+        count = [count, 1];
+    else
+        count(ind) = count(ind)+1;
+    end
+end
+
+% Sort reskeys
+org_reskeys = reskeys;
+n = 1;
+order = zeros(1,length(reskeys));
+
+for i=1:length(reskeys)
+    msc = zeros(1,20);
+    ind = 0;
+    for j=1:length(reskeys)
+        if length(reskeys{j}) < length(msc)
+            msc = reskeys{j};
+            ind = j;
+        elseif length(reskeys{j}) == length(msc)
+            for k=1:length(msc)
+                if reskeys{j}(k) > msc(k)
+                    msc = reskeys{j};
+                    ind = j;
+                    break;
+                elseif msc(k) > reskeys{j}(k)
+                    break;
+                end
+            end
+        end
+    end
+    order(n) = ind;
+    n = n+1;
+    reskeys{ind} = zeros(1,20);
+end
+
+reskeys = org_reskeys(order);
+count = count(order);
+
+leg = cell(1,length(reskeys));
+for i=1:length(reskeys)
+    leg{i} = strjoin(arrayfun(@(x) sprintf('%u',x), reskeys{i}, 'UniformOutput', false),'-');
+end
+
+figure(p.Results.fig);
+clf;
+bar(count./length(ginds).*100);
+set(gca, 'xticklabel', leg);
+set(gca, 'xtick', 1:length(leg));
+ylabel('Percent');
+xlabel('Result');
+title('Result distribution');
+
+end
+
+
+
+
+
+
+
+function plotSetupResultDist(stat_system, varargin)
+
+p = inputParser;
+addRequired(p, 'gameType', @ischar);
+addRequired(p, 'players');
+addParameter(p, 'latest', 0);
+addParameter(p, 'since', '2000-01-01 00:00:00');
+addParameter(p, 'until', '3000-01-01 00:00:00');
+addParameter(p, 'fig', 1);
+addParameter(p, 'filter', @(g) true);
+
+
+[ginds, ids] = processArguments(stat_system, p, varargin, @checkGameSetup);
+
+reskeys = {};
+count = [];
+
+for gs=1:length(ginds)
+    g = ginds(gs);
+    
+    sc = zeros(size(stat_system.game_log.getScoreOfGame(g)));
+    for i=1:length(sc)
+        sc(i) = stat_system.game_log.getPointsForId(ids(i,1),g);
+    end
+    
+    ind = 1;
+    while ind <= length(reskeys)
+        if length(reskeys{ind}) == length(sc) && sum(abs(reskeys{ind}-sc)) == 0
+            break;
+        end
+        ind = ind+1;
+    end
+    
+    if ind > length(reskeys)
+        reskeys{ind} = sc;
+        count = [count, 1];
+    else
+        count(ind) = count(ind)+1;
+    end
+end
+
+% Sort reskeys
+nsc = length(sc);
+org_reskeys = reskeys;
+n = 1;
+order = zeros(1,length(reskeys));
+switches = zeros(1,nsc-1);
+swind = 1;
+lastw = 0;
+
+for i=1:length(reskeys)
+    for j=1:length(reskeys)
+        if sum(order==j) == 0
+            ind = j;
+            msc = reskeys{j};
+            break;
+        end
+    end
+    
+    for j=1:length(reskeys)
+        [mm,wm] = max(msc);
+        [mn,wn] = max(reskeys{j});
+        if wn < wm
+            msc = reskeys{j};
+            ind = j;
+        elseif wn == wm
+            wt = (-(nsc-1)/2):((nsc-1)/2);
+            wem = dot(wt,msc);
+            wen = dot(wt,reskeys{j});
+            if wen < wem
+                msc = reskeys{j};
+                ind = j;
+            elseif wen == wem
+                if mn > mm
+                    msc = reskeys{j};
+                    ind = j;
+                end
+            end            
+        end
+    end
+    
+    if i==1
+        [~,lastw] = max(reskeys{ind});
+    else
+        [~, wn] = max(reskeys{ind});
+        if wn ~= lastw
+            lastw = wn;
+            switches(swind) = i;
+            swind = swind+1;
+        end
+    end
+    
+    order(n) = ind;
+    n = n+1;
+    reskeys{ind} = [zeros(1,nsc-1), 10000];
+end
+
+reskeys = org_reskeys(order);
+count = count(order);
+
+leg = cell(1,length(reskeys));
+for i=1:length(reskeys)
+    leg{i} = strjoin(arrayfun(@(x) sprintf('%u',x), reskeys{i}, 'UniformOutput', false),'-');
+end
+
+plstr = '';
+for i=1:size(ids, 1)
+    if i > 1
+        plstr = sprintf('%s vs. ', plstr);
+    end
+    for j=1:size(ids, 2)
+        if j == size(ids, 2) && j > 1
+            plstr = sprintf('%s and ', plstr);
+        elseif j > 1
+            plstr = sprintf('%s, ', plstr);
+        end
+        plstr = sprintf('%s%s', plstr, p.Results.players{i,j});
+    end
+end
+
+figure(p.Results.fig);
+clf;
+bar(count./length(ginds).*100);
+set(gca, 'xticklabel', leg);
+set(gca, 'xtick', 1:length(leg));
+ylabel('Percent');
+xlabel('Result');
+title(sprintf('Result distribution of %s',plstr));
+yl = ylim;
+hold on;
+for i=1:length(switches)
+    if switches(i) > 0
+        plot([switches(i)-0.5, switches(i)-0.5], yl, '--r');
+    end
+end
+
+
+
+    function ok = checkGameSetup(r, g)
+        if any(size(r.players) ~= size(g.player_names))
+            ok = false;
+        else
+            
+            rids = sort(stat_system.getPlayerIds(r.players),2);
+            gids = sort(g.player_ids,2);
+            
+            while ~isempty(gids)
+                found = false;
+                for ci=1:size(gids,1)
+                    if all(gids(ci,:) == rids(1,:))
+                        rids(1,:) = [];
+                        gids(ci,:) = [];
+                        found = true;
+                        break;
+                    end
+                end
+                if ~found
+                    ok = false;
+                    return;
+                end
+            end
+            ok = true;
+        end
+    end
+
+end
+
+
+
+
+
+
+
+
+
+
+
+
 function plotHistory(stat_system, varargin)
 
 p = inputParser;
@@ -130,6 +700,24 @@ switch (lower(p.Results.xaxis))
         xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds);
         xaxis = [xaxis{:}];
         xaxis_label = 'Time';
+    case {'day','days'}
+        ind = 1;
+        cols = zeros(1,length(ginds));
+        dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds);
+        dts = [dts{:}];
+        for i=1:length(ginds)-1
+            if year(dts(i)) ~= year(dts(i+1)) ||...
+                month(dts(i)) ~= month(dts(i+1)) ||...
+                day(dts(i)) ~= day(dts(i+1))
+                cols(ind) = i;
+                ind = ind+1;
+            end
+        end
+        cols(ind) = length(ginds);
+        
+        xaxis = dts(cols(1:ind));
+        xaxis_label = 'Day';
+        history = history(:,cols(1:ind));
     otherwise
         error('No xaxis type ''%s''!', p.Results.xaxis);
 end
@@ -151,7 +739,8 @@ for i=numel(ids):-1:1
 end
 xlabel(xaxis_label);
 ylabel('Rating');
-legend(leg,'location','bestOutside');
+l=legend(leg,'location','bestOutside');
+set(l,'fontSize',16)
 end
 
 
@@ -206,6 +795,10 @@ elseif isfield(p.Results,'until')
     ginds = stat_system.game_log.filterGameIndsOnTime('1000-01-01', p.Results.until, ginds);
 end
 
+if isfield(p.Results,'filter')
+    ginds = stat_system.game_log.filterGameIndsOnFunc(p.Results.filter, ginds);
+end
+
 if isfield(p.Results,'latest') && p.Results.latest > 0 && length(ginds) > p.Results.latest
     ginds = ginds(end-p.Results.latest+1:end);
 end
@@ -238,7 +831,9 @@ colmap = [0.000, 0.447, 0.741;
     0.635, 0.078, 0.184;
     0.213, 0.537, 0.430;
     0.870, 0.910, 0.430;
-    0.960, 0.350, 0.974;];
+    0.960, 0.350, 0.974;
+    0.100, 0.100, 0.100;
+    0.600, 0.600, 0.600];
 nrcol = size(colmap,1);
 
 color = colmap(mod(id-1,nrcol)+1,:);

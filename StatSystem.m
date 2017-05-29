@@ -16,13 +16,14 @@ classdef StatSystem < handle
     methods
         
         function obj = StatSystem()
-            obj.rating_systems = [BasicEloRatingSystem('total',{'single','master','double','double master'}),...
-                BasicEloRatingSystem('single',{'single'}),...
-                BasicEloRatingSystem('double',{'double'}),...
-                BasicEloRatingSystem('master',{'master'}),...
-                BasicEloRatingSystem('double master',{'double master'}),...
-                BasicEloRatingSystem('individual',{'single','master'}),...
-                BasicEloRatingSystem('team',{'double','double master'})];
+            obj.rating_systems = [BasicEloRatingSystem('total',{'single','master','double','double master'},{'single','master'},12),...
+                BasicEloRatingSystem('individual',{'single','master'},{'single','master'},12),...
+                BasicEloRatingSystem('team',{'double','double master'},{'double','double master'},10),...
+                BasicEloRatingSystem('single',{'single'},{'single'},12),...
+                BasicEloRatingSystem('master',{'master'},{'master'},8),...
+                BasicEloRatingSystem('double',{'double'},{'double'},12),...
+                BasicEloRatingSystem('double master',{'double master'},{'double master'},12)];
+
             obj.game_log = GameLog();
         end
         
@@ -41,6 +42,18 @@ classdef StatSystem < handle
             end
         end
         
+        function importStatSystemData(obj, sdata)
+            obj.removeGamesAfter(0);
+            
+            for i=1:sdata.game_log.getNumberOfGames()
+                type = sdata.game_log.getTypeOfGame(i);
+                players = sdata.game_log.getPlayerNamesOfGame(i);
+                score = sdata.game_log.getScoreOfGame(i);
+                time_str = sdata.game_log.getTimeStrOfGame(i);
+                
+                obj.addGameLast(type, players, score, time_str);
+            end
+        end
         
         function enterGame(obj, type, player_names, score, varargin)
             
@@ -307,10 +320,20 @@ classdef StatSystem < handle
             ratings = nan(size(player_ids));
         end
         
-        function [history, game_inds] = getHistoryOfSystem(obj, system_name, player_ids, from_game, to_game)
+        function ratings = getStartRatingsOfSystem(obj, system_name, player_ids)
             
             for i=1:length(obj.rating_systems)
                 if strcmp(obj.rating_systems(i).name, system_name)
+                    ratings = obj.rating_systems(i).getStartRatings(player_ids);
+                    return;
+                end
+            end
+        end
+        
+        function [history, game_inds] = getHistoryOfSystem(obj, system_name, player_ids, from_game, to_game)
+            
+            for i=1:length(obj.rating_systems)
+                if strcmp(obj.rating_systems(i).getName(), system_name)
                     [history, game_inds] = obj.rating_systems(i).getRatingHistory(player_ids, from_game, to_game);
                     return;
                 end

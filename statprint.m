@@ -30,6 +30,9 @@ function statprint(stat, varargin)
 %                argument is required to be followed by a game type and a
 %                player list (one row for each team to be calculated),
 %                {'latest', 'since', 'until', 'vs', 'vsand', 'filter'}.
+%   'expected' - Prints the expected score of a game setup, this argument
+%                is required to be followed by a game type and a player
+%                setup, {'ratingSystem'}.
 %
 %
 % List of key-value arguments:
@@ -97,8 +100,15 @@ function statprint(stat, varargin)
 %   Show Alice's win statistics in single games where she has scored at least once
 %   >> statprint('wins','gameType','single','players','Alice','filter',...
 %                @(g) sum(strcmp(g.player_names, 'Alice') .* g.score) > 0)
+%
+%   Show the expected score of a master game between Alice, Bob and
+%   Ceasar, according to the rating system 'master'
+%   >> statprint('expected','master',{'Alice';'Bob';'Ceasar'},'ratingSystem','master')
 
-if exist('stats.mat','file') == 2
+if length(varargin) > 1 && strcmp(varargin{1}, 'system')
+    stat_system = varargin{2};
+    varargin = varargin(3:end);
+elseif exist('stats.mat','file') == 2
     load('stats.mat')
 else
     stat_system = StatSystem();
@@ -125,6 +135,8 @@ switch (lower(stat))
         printRatingStats(stat_system, varargin{:});
     case {'marathon table','maraton table','mara table','marathontable','maratontable','maratable','table'}
         printMarathonTableStats(stat_system, varargin{:});
+    case {'exp','expec','expected'}
+        printExpectedStats(stat_system, varargin{:});
         
     otherwise
         error('Unsupported statistics: ''%s''!', stat);
@@ -701,7 +713,7 @@ for i=1:size(ids,1)
     if ties == 1        
         fprintf('Has tied 1 game.\n');
     elseif ties > 1
-        fprintf('\nHas tied %u games.', ties);
+        fprintf('Has tied %u games.\n', ties);
     end
     fprintf('\n');
 end
@@ -732,6 +744,7 @@ if ~isempty(ginds)
         
         
         [hist, hist_ginds] = stat_system.getHistoryOfSystem(rating_system, id, 1, max(ginds));
+        start_rat = stat_system.getStartRatingsOfSystem(rating_system, id);
         start_ind = find(hist_ginds >= min(ginds),1,'first');
         
         if isempty(start_ind)
@@ -760,7 +773,7 @@ if ~isempty(ginds)
         minhist = min(hist);
         
         if isempty(bfhist)
-            hist = [1200, hist]; %#ok<AGROW>
+            hist = [start_rat, hist]; %#ok<AGROW>
         else
             hist = [bfhist(end), hist]; %#ok<AGROW>
         end
@@ -802,7 +815,41 @@ end
 
 
 
+function printExpectedStats(stat_system, varargin)
 
+p = inputParser;
+addRequired(p, 'gameType', @ischar);
+addRequired(p, 'players');
+addParameter(p, 'ratingSystem', 'total');
+
+[hdr, ~, ids] = processArguments(stat_system, p, varargin);
+fprintf(hdr);
+
+
+    ratings = stat_system.getRatingsOfSystem(p.Results.ratingSystem, ids);
+    sc = stat_system.getEstimatedScoreOfSystem(p.Results.ratingSystem, p.Results.gameType, ratings);
+    sc = sc/max(sc)*3;
+    
+    plstr = '';
+    for i=1:size(ids, 1)
+        if i > 1
+            plstr = sprintf('%s vs. ', plstr);
+        end
+        for j=1:size(ids, 2)
+            if j == size(ids, 2) && j > 1
+                plstr = sprintf('%s and ', plstr);
+            elseif j > 1
+                plstr = sprintf('%s, ', plstr);
+            end
+            plstr = sprintf('%s%s', plstr, p.Results.players{i,j});
+        end
+    end    
+    fprintf('Expected score of the %s game %s, when played to 3:\n%s\n', p.Results.gameType, plstr,...
+        strjoin(arrayfun(@(x) sprintf('%.2f',x),sc,'UniformOutpu',false), ' - '));
+    
+    fprintf('\n');
+
+end
 
 
 
