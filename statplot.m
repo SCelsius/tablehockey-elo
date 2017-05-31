@@ -16,12 +16,21 @@ function statplot(plot, varargin)
 %                    into account which player scored what.
 %                        Supports options: 'fig', 'since', 'until', 'latest',
 %                                          'gameType', 'vs', 'vsand', 'filter'
+% 'dist'           - Plots the distribution of game results of a specific
+%                    game setup. This argument is required to be followed
+%                    by a game type and a cell array of player names.
+%                        Supports options: 'fig', 'since', 'until', 'latest'
+%                                          'filter'
 % 'week'/'weeks'   - Plots the rating gained/lost during the last week
 %                    (monday-sunday).
 %                        Supports options: 'players', 'fig', 'ratingSystem'
 %                                          'until', 'xaxis'
 % 'month'/'months' - Plots the rating gained/lost during the last calendar
 %                    month.
+%                        Supports options: 'players', 'fig', 'ratingSystem'
+%                                          'until', 'xaxis'
+% 'year'/'years'   - Plots the rating gained/lost during the last calendar
+%                    year.
 %                        Supports options: 'players', 'fig', 'ratingSystem'
 %                                          'until', 'xaxis'
 %
@@ -35,7 +44,8 @@ function statplot(plot, varargin)
 % 'until'        - Only use data up to a selected point in time (string).
 % 'latest'       - Only use data from at most latest (number) games.
 % 'xaxis'        - Set type of xaxis, valid values are
-%                  'game', 'game_nr'/'nr'/'game_id'/'id', 'day/'days' and 'time'.
+%                  'game', 'game_nr'/'nr'/'game_id'/'id', 'day/'days', 
+%                  'week'/'weeks', 'month'/'months' and 'time'.
 % 'gameType'     - Only draw statistics from games of a certain type. Value
 %                  can be a single string or a cell array of strings.
 % 'vs'           - Only draw statistics from games where at least one of
@@ -69,7 +79,38 @@ function statplot(plot, varargin)
 %                                   team that won the game (if any), 0 elsewhere.
 %                  g.tie          - an indicator vector that is 1 for each
 %                                   team that tied the game (if any), 0 elsewhere.
-
+%
+%
+% Examples:
+%   Plot the current ratings of the default rating system ('total') as bars:
+%   >> statplot('bar')
+%
+%   Plot the history of rating system 'single', for Alice and Bob, since
+%   2018, on week resolution:
+%   >> statplot('hist','ratingSystem','single','players',{'Alice','Bob'},...
+%               'since','2018-01-01','xaxis','week')
+%   
+%   Plot the distribution of all single games during 2018 in which both
+%   players scored at least once:
+%   >> statplot('distall','gameType','single','since','2018-01-01',...
+%               'until','2018-12-31','filter',@(g) min(g.score) > 0)
+%
+%   Plot the distribution of results the 20 last master games between
+%   Alice, Bob and Ceasar:
+%   >> statplot('dist','master',{'Alice';'Bob';'Ceasar'},'latest',20)
+%
+%   Plot the gained rating of system 'individual' during the current week
+%   in figure 64, with respect to game id:
+%   >> statplot('week','ratingSystem','individual','fig',64,'xaxis','id')
+%
+%   Plot the gained rating of the default system ('total') during February
+%   2018, with time on the horizontal axis:
+%   >> statplot('month','until','2018-02-28','time')
+%
+%
+%
+% Lastly, available plots again: 'bar', 'hist', 'distall', 'dist', 'week',
+%                                'month', 'year'
 
 if length(varargin) > 1 && strcmp(varargin{1}, 'system')
     stat_system = varargin{2};
@@ -95,6 +136,8 @@ switch(lower(plot))
         plotWeek(stat_system, varargin{:});
     case {'month','months'}
         plotMonth(stat_system, varargin{:});
+    case {'year','years'}
+        plotYear(stat_system, varargin{:});
         
     otherwise
         error('Unsupported plot: ''%s''!', plot);
@@ -103,6 +146,84 @@ end
 
 
 end
+
+
+
+function plotYear(stat_system, varargin)
+
+p = inputParser;
+addParameter(p, 'players', stat_system.player_names);
+addParameter(p, 'fig', 1);
+addParameter(p, 'ratingSystem', 'total');
+addParameter(p, 'xaxis', 'game');
+addParameter(p, 'until', '3000-01-01');
+
+[ginds, ids, rating_system] = processArguments(stat_system, p, varargin);
+
+ids = ids(:);
+
+[history, ginds] = stat_system.getHistoryOfSystem(rating_system, ids, 1, max(ginds));
+starts = stat_system.getStartRatingsOfSystem(rating_system, ids);
+
+if isempty(ginds)
+    fprintf('No history!\n');
+    return;
+end
+
+
+this_year = year(datetime(stat_system.game_log.getTimeStrOfGame(ginds(end))));
+first = length(ginds)-1;
+
+while first > 0 && year(datetime(stat_system.game_log.getTimeStrOfGame(ginds(first)))) == this_year
+    first = first-1;
+end
+
+init = zeros(length(ids),1);
+
+for i=1:length(ids)
+    if first < 1 || isnan(history(i,first))
+        init(i) = starts(i);
+    else
+        init(i) = history(i,first);
+    end
+end
+
+data = [init, history(:,first+1:end)] - kron(ones(1,length(ginds)-first+1), init);
+data(isnan(data(:,1:end-1))) = 0;
+
+if first > 0
+    ginds = ginds(first:end);
+else
+    ginds = [0, ginds(first+1:end)];
+end
+
+[xaxis, xaxis_label, data, x_ticklabel] = createXAxis(p.Results.xaxis, ginds, data, stat_system);
+
+[~, srt] = sort(data(:,end));
+figure(p.Results.fig);
+clf;
+hold on;
+title(sprintf('%u of rating system ''%s''', this_year, rating_system));
+leg = {};
+for i=numel(ids):-1:1
+    id = ids(srt(i));
+    row = data(srt(i),:);
+    
+    if ~isnan(row(end))
+        plot(xaxis, row, 'color', getColorFromId(id));
+        leg{length(leg)+1} = stat_system.getNameOfId(id);
+    end
+end
+xlabel(xaxis_label);
+ylabel('Rating');
+l=legend(leg,'location','bestOutside');
+set(l,'fontSize',16)
+if ~isempty(x_ticklabel)
+    set(gca,'xtick',xaxis);
+    set(gca,'xticklabel',x_ticklabel,'TickLabelInterpreter','latex');
+end
+end
+
 
 
 
@@ -158,50 +279,7 @@ else
     ginds = [0, ginds(first+1:end)];
 end
 
-
-
-switch (lower(p.Results.xaxis))
-    case 'game'
-        xaxis = 0:length(ginds)-1;
-        xaxis_label = 'Game';
-    case {'game_nr','gamenr','nr','number','game_id','gameid','id'}
-        xaxis = ginds;
-        xaxis_label = 'Game ID';
-    case 'time'
-        if ginds(1) == 0
-            xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds(2:end));
-            xaxis = [xaxis{1}-1, xaxis{:}];
-        else
-            xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds);
-            xaxis = [xaxis{:}];
-        end
-        xaxis_label = 'Time';
-    case {'day','days'}
-        ind = 1;
-        cols = zeros(1,length(ginds));
-        if ginds(1) == 0
-            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds(2:end));
-            dts = [dts{1}-1, dts{:}];
-        else
-            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds);
-            dts = [dts{:}];
-        end
-        for i=1:length(ginds)-1
-            if year(dts(i)) ~= year(dts(i+1)) ||...
-                month(dts(i)) ~= month(dts(i+1)) ||...
-                day(dts(i)) ~= day(dts(i+1))
-                cols(ind) = i;
-                ind = ind+1;
-            end
-        end
-        cols(ind) = length(ginds);
-        
-        xaxis = dts(cols(1:ind));
-        xaxis_label = 'Day';
-        data = data(:,cols(1:ind));
-    otherwise
-        error('No xaxis type ''%s''!', p.Results.xaxis);
-end
+[xaxis, xaxis_label, data, x_ticklabel] = createXAxis(p.Results.xaxis, ginds, data, stat_system);
 
 [~, srt] = sort(data(:,end));
 figure(p.Results.fig);
@@ -222,7 +300,10 @@ xlabel(xaxis_label);
 ylabel('Rating');
 l=legend(leg,'location','bestOutside');
 set(l,'fontSize',16)
-
+if ~isempty(x_ticklabel)
+    set(gca,'xtick',xaxis);
+    set(gca,'xticklabel',x_ticklabel,'TickLabelInterpreter','latex');
+end
 end
 
 
@@ -283,50 +364,7 @@ else
     ginds = [0, ginds(first+1:end)];
 end
 
-
-
-switch (lower(p.Results.xaxis))
-    case 'game'
-        xaxis = 0:length(ginds)-1;
-        xaxis_label = 'Game';
-    case {'game_nr','gamenr','nr','number','game_id','gameid','id'}
-        xaxis = ginds;
-        xaxis_label = 'Game ID';
-    case 'time'
-        if ginds(1) == 0
-            xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds(2:end));
-            xaxis = [xaxis{1}-1, xaxis{:}];
-        else
-            xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds);
-            xaxis = [xaxis{:}];
-        end
-        xaxis_label = 'Time';
-    case {'day','days'}
-        ind = 1;
-        cols = zeros(1,length(ginds));
-        if ginds(1) == 0
-            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds(2:end));
-            dts = [dts{1}-1, dts{:}];
-        else
-            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds);
-            dts = [dts{:}];
-        end
-        for i=1:length(ginds)-1
-            if year(dts(i)) ~= year(dts(i+1)) ||...
-                month(dts(i)) ~= month(dts(i+1)) ||...
-                day(dts(i)) ~= day(dts(i+1))
-                cols(ind) = i;
-                ind = ind+1;
-            end
-        end
-        cols(ind) = length(ginds);
-        
-        xaxis = dts(cols(1:ind));
-        xaxis_label = 'Day';
-        data = data(:,cols(1:ind));
-    otherwise
-        error('No xaxis type ''%s''!', p.Results.xaxis);
-end
+[xaxis, xaxis_label, data, x_ticklabel] = createXAxis(p.Results.xaxis, ginds, data, stat_system);
 
 [~, srt] = sort(data(:,end));
 figure(p.Results.fig);
@@ -347,7 +385,10 @@ xlabel(xaxis_label);
 ylabel('Rating');
 l=legend(leg,'location','bestOutside');
 set(l,'fontSize',16)
-
+if ~isempty(x_ticklabel)
+    set(gca,'xtick',xaxis);
+    set(gca,'xticklabel',x_ticklabel,'TickLabelInterpreter','latex');
+end
 end
 
 
@@ -397,6 +438,11 @@ ylabel('Rating');
 end
 
 
+
+
+
+
+
 function plotAllResultDist(stat_system, varargin)
 
 p = inputParser;
@@ -429,10 +475,10 @@ for gs=1:length(ginds)
     end
     
     if ind > length(reskeys)
-        reskeys{ind} = sc;
-        count = [count, 1];
+        reskeys{ind} = sc; %#ok<AGROW>
+        count = [count, 1]; %#ok<AGROW>
     else
-        count(ind) = count(ind)+1;
+        count(ind) = count(ind)+1; %#ok<AGROW>
     end
 end
 
@@ -462,7 +508,7 @@ for i=1:length(reskeys)
     end
     order(n) = ind;
     n = n+1;
-    reskeys{ind} = zeros(1,20);
+    reskeys{ind} = zeros(1,20); %#ok<AGROW>
 end
 
 reskeys = org_reskeys(order);
@@ -524,10 +570,10 @@ for gs=1:length(ginds)
     end
     
     if ind > length(reskeys)
-        reskeys{ind} = sc;
-        count = [count, 1];
+        reskeys{ind} = sc; %#ok<AGROW>
+        count = [count, 1]; %#ok<AGROW>
     else
-        count(ind) = count(ind)+1;
+        count(ind) = count(ind)+1; %#ok<AGROW>
     end
 end
 
@@ -584,7 +630,7 @@ for i=1:length(reskeys)
     
     order(n) = ind;
     n = n+1;
-    reskeys{ind} = [zeros(1,nsc-1), 10000];
+    reskeys{ind} = [zeros(1,nsc-1), 10000]; %#ok<AGROW>
 end
 
 reskeys = org_reskeys(order);
@@ -689,38 +735,7 @@ if isempty(ginds)
     return;
 end
 
-switch (lower(p.Results.xaxis))
-    case 'game'
-        xaxis = 1:length(ginds);
-        xaxis_label = 'Game';
-    case {'game_nr','gamenr','nr','number','game_id','gameid','id'}
-        xaxis = ginds;
-        xaxis_label = 'Game ID';
-    case 'time'
-        xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds);
-        xaxis = [xaxis{:}];
-        xaxis_label = 'Time';
-    case {'day','days'}
-        ind = 1;
-        cols = zeros(1,length(ginds));
-        dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds);
-        dts = [dts{:}];
-        for i=1:length(ginds)-1
-            if year(dts(i)) ~= year(dts(i+1)) ||...
-                month(dts(i)) ~= month(dts(i+1)) ||...
-                day(dts(i)) ~= day(dts(i+1))
-                cols(ind) = i;
-                ind = ind+1;
-            end
-        end
-        cols(ind) = length(ginds);
-        
-        xaxis = dts(cols(1:ind));
-        xaxis_label = 'Day';
-        history = history(:,cols(1:ind));
-    otherwise
-        error('No xaxis type ''%s''!', p.Results.xaxis);
-end
+[xaxis, xaxis_label, history, x_ticklabel] = createXAxis(p.Results.xaxis, ginds, history, stat_system);
 
 [~, srt] = sort(history(:,end));
 figure(p.Results.fig);
@@ -741,12 +756,125 @@ xlabel(xaxis_label);
 ylabel('Rating');
 l=legend(leg,'location','bestOutside');
 set(l,'fontSize',16)
+if ~isempty(x_ticklabel)
+    set(gca,'xtick',xaxis);
+    set(gca,'xticklabel',x_ticklabel,'TickLabelInterpreter','latex');
+end
 end
 
 
 
 
 
+
+
+function [xaxis, xaxis_label, data, x_ticklabel] = createXAxis(type, ginds, data, stat_system)
+
+x_ticklabel = {};
+
+switch (lower(type))
+    case 'game'
+        xaxis = 1:length(ginds);
+        xaxis_label = 'Game';
+    case {'game_nr','gamenr','nr','number','game_id','gameid','id'}
+        xaxis = ginds;
+        xaxis_label = 'Game ID';
+    case 'time'
+        xaxis = stat_system.game_log.getGameData(@(g) g.time, ginds);
+        xaxis = [xaxis{:}];
+        xaxis_label = 'Time';
+    case {'day','days'}
+        ind = 1;
+        cols = zeros(1,length(ginds));
+        if ginds(1) == 0
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds(2:end));
+            dts = [dts{1}-caldays(1), dts{:}];
+        else
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds);
+            dts = [dts{:}];
+        end
+        for i=1:length(ginds)-1
+            if year(dts(i)) ~= year(dts(i+1)) ||...
+                    month(dts(i)) ~= month(dts(i+1)) ||...
+                day(dts(i)) ~= day(dts(i+1))
+                cols(ind) = i;
+                ind = ind+1;
+            end
+        end
+        cols(ind) = length(ginds);
+        
+        xaxis = dts(cols(1:ind));
+        xaxis_label = 'Day';
+        data = data(:,cols(1:ind));
+    case {'week','weeks'}
+        ind = 1;
+        cols = zeros(1,length(ginds));
+        if ginds(1) == 0
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds(2:end));
+            dts = [dts{1}-calweeks(1), dts{:}];
+        else
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds);
+            dts = [dts{:}];
+        end
+        for i=1:length(ginds)-1
+            if year(dts(i)) ~= year(dts(i+1)) ||...
+                    week(dts(i)) ~= week(dts(i+1))
+                cols(ind) = i;
+                ind = ind+1;
+            end
+        end
+        cols(ind) = length(ginds);
+        
+        xaxis = 1:ind;
+        xaxis_label = 'Week';
+        data = data(:,cols(1:ind));
+        x_ticklabel = cell(1,length(xaxis));
+        for i=1:length(xaxis)
+            if year(dts(cols(1))) == year(dts(cols(ind)))
+                x_ticklabel{i} = sprintf('%u', week(dts(cols(i))));
+            else
+                if i==1 || year(dts(cols(i))) ~= year(dts(cols(i-1)))
+                    x_ticklabel{i} = sprintf('\\begin{tabular}{c}%u\\\\(%u)\\end{tabular}',week(dts(cols(i))), year(dts(cols(i))));
+                else
+                    x_ticklabel{i} = sprintf('%u', week(dts(cols(i))));
+                end
+            end
+        end
+    case {'month','months'}
+        ind = 1;
+        cols = zeros(1,length(ginds));
+        if ginds(1) == 0
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds(2:end));
+            dts = [dts{1}-calmonths(1), dts{:}];
+        else
+            dts = stat_system.game_log.getGameData(@(g) datetime(year(g.time), month(g.time), day(g.time)), ginds);
+            dts = [dts{:}];
+        end
+        for i=1:length(ginds)-1
+            if year(dts(i)) ~= year(dts(i+1)) ||...
+                    month(dts(i)) ~= month(dts(i+1))
+                cols(ind) = i;
+                ind = ind+1;
+            end
+        end
+        cols(ind) = length(ginds);
+        
+        xaxis = 1:ind;
+        xaxis_label = 'Month';
+        data = data(:,cols(1:ind));
+        x_ticklabel = cell(1,length(xaxis));
+        for i=1:length(xaxis)
+            if year(dts(cols(1))) == year(dts(cols(ind)))
+                x_ticklabel{i} = char(month(dts(cols(i)),'name'));
+            else
+                x_ticklabel{i} = sprintf('%s %u', char(month(dts(cols(i)),'name')), year(dts(cols(i))));
+            end
+        end
+    otherwise
+        error('No xaxis type ''%s''!', p.Results.xaxis);
+end
+
+end
 
 
 

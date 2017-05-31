@@ -33,6 +33,15 @@ function statprint(stat, varargin)
 %   'expected' - Prints the expected score of a game setup, this argument
 %                is required to be followed by a game type and a player
 %                setup, {'ratingSystem'}.
+%   'week'     - Prints statistics about players accumulated rating points
+%                during weeks; how many weeks have been won, max and min.
+%                {'players', 'since', 'until', 'filter', 'ratingSystem'}
+%   'month'    - Prints statistics about players accumulated rating points
+%                during months; how many months have been won, max and min.
+%                {'players', 'since', 'until', 'filter', 'ratingSystem'}
+%   'year '    - Prints statistics about players accumulated rating points
+%                during years; how many years have been won, max and min.
+%                {'players', 'since', 'until', 'filter', 'ratingSystem'}
 %
 %
 % List of key-value arguments:
@@ -87,7 +96,8 @@ function statprint(stat, varargin)
 %   >> statprint('streak');
 %
 %   Print Bob's scoring statistics of his 5 latest single games against Alice:
-%   >> statprint('scoring','gameType','single','latest',5,'players','Bob','vs',{'Alice','Bob'})
+%   >> statprint('scoring','gameType','single','latest',5,'players','Bob',...
+%                'vs',{'Alice','Bob'},'vsand',true)
 %
 %   List all master games since 1980:
 %   >> statprint('list','gameType','master','since','1980-01-01')
@@ -102,8 +112,18 @@ function statprint(stat, varargin)
 %                @(g) sum(strcmp(g.player_names, 'Alice') .* g.score) > 0)
 %
 %   Show the expected score of a master game between Alice, Bob and
-%   Ceasar, according to the rating system 'master'
+%   Ceasar, according to the rating system 'master':
 %   >> statprint('expected','master',{'Alice';'Bob';'Ceasar'},'ratingSystem','master')
+%
+%   Show whom of Alice and Bob has "won" (rating-wise) most months in between 
+%   them during February-April 2019, in rating system 'single':
+%   >> statprint('month','players',{'Alice','Bob'},'since','2019-02-01',...
+%                'until','2019-04-30','ratingSystem','single')
+%
+%
+% Lastly, available stats again: 'wins', 'score', 'rating', 'streak',
+%                                'current', 'list', 'marathon', 'table',
+%                                'expected', 'week', 'month'
 
 if length(varargin) > 1 && strcmp(varargin{1}, 'system')
     stat_system = varargin{2};
@@ -137,6 +157,12 @@ switch (lower(stat))
         printMarathonTableStats(stat_system, varargin{:});
     case {'exp','expec','expected'}
         printExpectedStats(stat_system, varargin{:});
+    case {'week','weeks'}
+        printWeekStats(stat_system, varargin{:});
+    case {'month','months'}
+        printMonthStats(stat_system, varargin{:});
+    case {'year','years'}
+        printYearStats(stat_system, varargin{:});
         
     otherwise
         error('Unsupported statistics: ''%s''!', stat);
@@ -845,13 +871,375 @@ fprintf(hdr);
         end
     end    
     fprintf('Expected score of the %s game %s, when played to 3:\n%s\n', p.Results.gameType, plstr,...
-        strjoin(arrayfun(@(x) sprintf('%.2f',x),sc,'UniformOutpu',false), ' - '));
+        strjoin(arrayfun(@(x) sprintf('%.2f',x),sc,'UniformOutput',false), ' - '));
     
     fprintf('\n');
 
 end
 
 
+
+
+
+
+function printWeekStats(stat_system, varargin)
+
+p = inputParser;
+addParameter(p, 'players', stat_system.player_names);
+addParameter(p, 'since', '1000-01-01');
+addParameter(p, 'until', '5000-01-01');
+addParameter(p, 'ratingSystem', 'total', @ischar);
+addParameter(p, 'filter', @(g) true);
+
+[hdr, ginds, ids, rating_system] = processArguments(stat_system, p, varargin);
+fprintf(hdr);
+
+if isempty(ginds)
+    return;
+end
+
+maxgind = max(ginds);
+mingind = min(ginds);
+
+[history, allginds] = stat_system.getHistoryOfSystem(rating_system, ids, 1, stat_system.game_log.getNumberOfGames());
+starts = stat_system.getStartRatingsOfSystem(rating_system, ids(:));
+dts = stat_system.game_log.getGameData(@(g) datetime(g.time), allginds);
+
+ind = find(allginds >= mingind,1,'first');
+if allginds(ind) > maxgind
+    fprintf('No history!');
+    return;
+end
+
+wek = week(dts{ind});
+yer = year(dts{ind});
+
+while ind > 0 && week(dts{ind}) == wek && year(dts{ind}) == yer
+    ind = ind-1;
+end
+
+edges = ind;
+
+ind = ind+1;
+done = false;
+while ~done
+    while ind <= length(allginds) && week(dts{ind}) == wek && year(dts{ind}) == yer
+        ind = ind+1;
+    end
+    
+    edges = [edges, ind-1]; %#ok<AGROW>
+    
+    if ind <= length(allginds) && allginds(ind) <= maxgind
+        wek = week(dts{ind});
+        yer = year(dts{ind});
+    else
+        done = true;
+    end
+end
+
+if edges(1) == 0
+    rats = [nan(numel(ids),1), history(:,edges(2:end))];
+else
+    rats = history(:,edges);
+end
+
+for i=1:numel(ids)
+    last = find(isnan(rats(i,:)),1,'last');
+    if ~isempty(last)
+        rats(i,last) = starts(i);
+    end
+end
+
+diffs = diff(rats,1,2);
+maxs = max(diffs);
+win = diffs == kron(maxs, ones(numel(ids),1));
+wins = sum(win,2);
+
+for i=1:numel(ids)
+    
+    nr_weeks = sum(~isnan(diffs(i,:)));
+    
+    if nr_weeks < 1
+        continue;
+    end
+    
+    g_str = sprintf('%u weeks', nr_weeks);
+    if nr_weeks == 1
+        g_str = '1 week';
+    end
+    w_str = sprintf('%u weeks', wins(i));
+    if wins(i) == 1
+        w_str = '1 week';
+    end
+    fprintf('--- %s (%s):\n', stat_system.getNameOfId(ids(i)), g_str);
+    fprintf('Has won %s (%u%%)\n', w_str, round(wins(i)/nr_weeks*100));
+    [maxdiff,maxind] = max(diffs(i,:));
+    maxsign = '+';
+    maxwin = '';
+    if maxdiff < 0
+        maxsign = '-';
+    end
+    if win(i,maxind)
+        maxwin = ' (win)';
+    end
+    [mindiff,minind] = min(diffs(i,:));
+    minsign = '+';
+    minwin = '';
+    if mindiff < 0
+        minsign = '-';
+    end
+    if win(i,minind)
+        minwin = ' (win)';
+    end
+    fprintf('Best was week %u %u with %s%u points%s\n', week(dts{edges(maxind+1)}), year(dts{edges(maxind+1)}), maxsign, abs(round(maxdiff)), maxwin);
+    fprintf('Worst was week %u %u with %s%u points%s\n\n', week(dts{edges(minind+1)}), year(dts{edges(minind+1)}), minsign, abs(round(mindiff)), minwin);
+    
+end
+
+
+end
+
+
+
+
+
+
+
+function printMonthStats(stat_system, varargin)
+
+p = inputParser;
+addParameter(p, 'players', stat_system.player_names);
+addParameter(p, 'since', '1000-01-01');
+addParameter(p, 'until', '5000-01-01');
+addParameter(p, 'ratingSystem', 'total', @ischar);
+addParameter(p, 'filter', @(g) true);
+
+[hdr, ginds, ids, rating_system] = processArguments(stat_system, p, varargin);
+fprintf(hdr);
+
+if isempty(ginds)
+    return;
+end
+
+maxgind = max(ginds);
+mingind = min(ginds);
+
+[history, allginds] = stat_system.getHistoryOfSystem(rating_system, ids, 1, stat_system.game_log.getNumberOfGames());
+starts = stat_system.getStartRatingsOfSystem(rating_system, ids(:));
+dts = stat_system.game_log.getGameData(@(g) datetime(g.time), allginds);
+
+ind = find(allginds >= mingind,1,'first');
+if allginds(ind) > maxgind
+    fprintf('No history!');
+    return;
+end
+
+mon = month(dts{ind});
+yer = year(dts{ind});
+
+while ind > 0 && month(dts{ind}) == mon && year(dts{ind}) == yer
+    ind = ind-1;
+end
+
+edges = ind;
+
+ind = ind+1;
+done = false;
+while ~done
+    while ind <= length(allginds) && month(dts{ind}) == mon && year(dts{ind}) == yer
+        ind = ind+1;
+    end
+    
+    edges = [edges, ind-1]; %#ok<AGROW>
+    
+    if ind <= length(allginds) && allginds(ind) <= maxgind
+        mon = month(dts{ind});
+        yer = year(dts{ind});
+    else
+        done = true;
+    end
+end
+
+if edges(1) == 0
+    rats = [nan(numel(ids),1), history(:,edges(2:end))];
+else
+    rats = history(:,edges);
+end
+
+for i=1:numel(ids)
+    last = find(isnan(rats(i,:)),1,'last');
+    if ~isempty(last)
+        rats(i,last) = starts(i);
+    end
+end
+
+diffs = diff(rats,1,2);
+maxs = max(diffs);
+win = diffs == kron(maxs, ones(numel(ids),1));
+wins = sum(win,2);
+
+for i=1:numel(ids)
+    
+    nr_months = sum(~isnan(diffs(i,:)));
+    
+    if nr_months < 1
+        continue;
+    end
+    
+    g_str = sprintf('%u months', nr_months);
+    if nr_months == 1
+        g_str = '1 month';
+    end
+    w_str = sprintf('%u months', wins(i));
+    if wins(i) == 1
+        w_str = '1 month';
+    end
+    fprintf('--- %s (%s):\n', stat_system.getNameOfId(ids(i)), g_str);
+    fprintf('Has won %s (%u%%)\n', w_str, round(wins(i)/nr_months*100));
+    [maxdiff,maxind] = max(diffs(i,:));
+    maxsign = '+';
+    maxwin = '';
+    if maxdiff < 0
+        maxsign = '-';
+    end
+    if win(i,maxind)
+        maxwin = ' (win)';
+    end
+    [mindiff,minind] = min(diffs(i,:));
+    minsign = '+';
+    minwin = '';
+    if mindiff < 0
+        minsign = '-';
+    end
+    if win(i,minind)
+        minwin = ' (win)';
+    end
+    fprintf('Best was %s %u with %s%u points%s\n', char(month(dts{edges(maxind+1)},'name')), year(dts{edges(maxind+1)}), maxsign, abs(round(maxdiff)), maxwin);
+    fprintf('Worst was %s %u with %s%u points%s\n\n', char(month(dts{edges(minind+1)},'name')), year(dts{edges(minind+1)}), minsign, abs(round(mindiff)), minwin);
+    
+end
+
+
+end
+
+
+
+
+
+function printYearStats(stat_system, varargin)
+
+p = inputParser;
+addParameter(p, 'players', stat_system.player_names);
+addParameter(p, 'since', '1000-01-01');
+addParameter(p, 'until', '5000-01-01');
+addParameter(p, 'ratingSystem', 'total', @ischar);
+addParameter(p, 'filter', @(g) true);
+
+[hdr, ginds, ids, rating_system] = processArguments(stat_system, p, varargin);
+fprintf(hdr);
+
+if isempty(ginds)
+    return;
+end
+
+maxgind = max(ginds);
+mingind = min(ginds);
+
+[history, allginds] = stat_system.getHistoryOfSystem(rating_system, ids, 1, stat_system.game_log.getNumberOfGames());
+starts = stat_system.getStartRatingsOfSystem(rating_system, ids(:));
+dts = stat_system.game_log.getGameData(@(g) datetime(g.time), allginds);
+
+ind = find(allginds >= mingind,1,'first');
+if allginds(ind) > maxgind
+    fprintf('No history!');
+    return;
+end
+
+yer = year(dts{ind});
+
+while ind > 0 && year(dts{ind}) == yer
+    ind = ind-1;
+end
+
+edges = ind;
+
+ind = ind+1;
+done = false;
+while ~done
+    while ind <= length(allginds) && year(dts{ind}) == yer
+        ind = ind+1;
+    end
+    
+    edges = [edges, ind-1]; %#ok<AGROW>
+    
+    if ind <= length(allginds) && allginds(ind) <= maxgind
+        yer = year(dts{ind});
+    else
+        done = true;
+    end
+end
+
+if edges(1) == 0
+    rats = [nan(numel(ids),1), history(:,edges(2:end))];
+else
+    rats = history(:,edges);
+end
+
+for i=1:numel(ids)
+    last = find(isnan(rats(i,:)),1,'last');
+    if ~isempty(last)
+        rats(i,last) = starts(i);
+    end
+end
+
+diffs = diff(rats,1,2);
+maxs = max(diffs);
+win = diffs == kron(maxs, ones(numel(ids),1));
+wins = sum(win,2);
+
+for i=1:numel(ids)
+    
+    nr_years = sum(~isnan(diffs(i,:)));
+    
+    if nr_years < 1
+        continue;
+    end
+    
+    g_str = sprintf('%u years', nr_years);
+    if nr_years == 1
+        g_str = '1 year';
+    end
+    w_str = sprintf('%u years', wins(i));
+    if wins(i) == 1
+        w_str = '1 year';
+    end
+    fprintf('--- %s (%s):\n', stat_system.getNameOfId(ids(i)), g_str);
+    fprintf('Has won %s (%u%%)\n', w_str, round(wins(i)/nr_years*100));
+    [maxdiff,maxind] = max(diffs(i,:));
+    maxsign = '+';
+    maxwin = '';
+    if maxdiff < 0
+        maxsign = '-';
+    end
+    if win(i,maxind)
+        maxwin = ' (win)';
+    end
+    [mindiff,minind] = min(diffs(i,:));
+    minsign = '+';
+    minwin = '';
+    if mindiff < 0
+        minsign = '-';
+    end
+    if win(i,minind)
+        minwin = ' (win)';
+    end
+    fprintf('Best was %u with %s%u points%s\n', year(dts{edges(maxind+1)}), maxsign, abs(round(maxdiff)), maxwin);
+    fprintf('Worst was %u with %s%u points%s\n\n', year(dts{edges(minind+1)}), minsign, abs(round(mindiff)), minwin);
+    
+end
+
+
+end
 
 
 
