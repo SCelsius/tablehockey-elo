@@ -299,7 +299,7 @@ classdef BasicEloRatingSystem < RatingSystem
                     this_ginds = game_log.filterGameIndsOnPlayerIdsAny(player_ids(i), ginds);
                     ratios = game_log.getPointRatiosForId(player_ids(i), this_ginds);
                     types = game_log.getGameData(@(g) g.type, this_ginds);
-                    ids = game_log.getGameData(@(g) g.player_ids, this_ginds);
+                    ids = game_log.getGameData(@(g) g.player_ids.aliases, this_ginds);
                     ratings = cell(1,length(this_ginds));
                     pl_teams = zeros(1,length(this_ginds));
                     pl_inds = zeros(1,length(this_ginds));

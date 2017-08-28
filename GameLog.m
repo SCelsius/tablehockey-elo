@@ -27,7 +27,7 @@ classdef GameLog < handle
     % statistics system
     methods (Access = {?StatSystem})
         
-        function addGame(obj, game_type, player_ids, player_names, score, time_str)
+        function addGame(obj, game_type, player_ids, player_ids2, player_names, score, time_str)
             game_nr = obj.findInsertionGameNr(time_str);
             
             if isrow(score)
@@ -43,7 +43,7 @@ classdef GameLog < handle
             
             new_game = struct();
             new_game.type = game_type;
-            new_game.player_ids = player_ids;
+            new_game.player_ids = IdStruct(player_ids, player_ids2);
             new_game.player_names = player_names;
             new_game.time = datetime(time_str);
             new_game.score = score;
@@ -70,6 +70,17 @@ classdef GameLog < handle
             keep_inds = setdiff(1:length(obj.games), game_inds);
             
             obj.games = obj.games(keep_inds);            
+        end
+        
+        function renamePlayer(obj, player_name, new_name)
+            
+            for i=1:length(obj.games)
+                for j=1:numel(obj.games(i).player_names)
+                    if strcmp(obj.games(i).player_names{j}, player_name)
+                        obj.games(i).player_names{j} = new_name;
+                    end
+                end
+            end            
         end
     end
     

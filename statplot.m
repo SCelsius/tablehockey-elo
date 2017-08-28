@@ -189,7 +189,6 @@ for i=1:length(ids)
 end
 
 data = [init, history(:,first+1:end)] - kron(ones(1,length(ginds)-first+1), init);
-data(isnan(data(:,1:end-1))) = 0;
 
 if first > 0
     ginds = ginds(first:end);
@@ -199,7 +198,7 @@ end
 
 [xaxis, xaxis_label, data, x_ticklabel] = createXAxis(p.Results.xaxis, ginds, data, stat_system);
 
-[~, srt] = sort(data(:,end));
+srt = getDataSort(data);
 figure(p.Results.fig);
 clf;
 hold on;
@@ -209,7 +208,7 @@ for i=numel(ids):-1:1
     id = ids(srt(i));
     row = data(srt(i),:);
     
-    if ~isnan(row(end))
+    if any(~isnan(row))
         plot(xaxis, row, 'color', getColorFromId(id));
         leg{length(leg)+1} = stat_system.getNameOfId(id);
     end
@@ -271,7 +270,6 @@ for i=1:length(ids)
 end
 
 data = [init, history(:,first+1:end)] - kron(ones(1,length(ginds)-first+1), init);
-data(isnan(data(:,1:end-1))) = 0;
 
 if first > 0
     ginds = ginds(first:end);
@@ -281,7 +279,7 @@ end
 
 [xaxis, xaxis_label, data, x_ticklabel] = createXAxis(p.Results.xaxis, ginds, data, stat_system);
 
-[~, srt] = sort(data(:,end));
+srt = getDataSort(data);
 figure(p.Results.fig);
 clf;
 hold on;
@@ -291,7 +289,7 @@ for i=numel(ids):-1:1
     id = ids(srt(i));
     row = data(srt(i),:);
     
-    if ~isnan(row(end))
+    if any(~isnan(row))
         plot(xaxis, row, 'color', getColorFromId(id));
         leg{length(leg)+1} = stat_system.getNameOfId(id);
     end
@@ -356,7 +354,6 @@ for i=1:length(ids)
 end
 
 data = [init, history(:,first+1:end)] - kron(ones(1,length(ginds)-first+1), init);
-data(isnan(data(:,1:end-1))) = 0;
 
 if first > 0
     ginds = ginds(first:end);
@@ -366,7 +363,7 @@ end
 
 [xaxis, xaxis_label, data, x_ticklabel] = createXAxis(p.Results.xaxis, ginds, data, stat_system);
 
-[~, srt] = sort(data(:,end));
+srt = getDataSort(data);
 figure(p.Results.fig);
 clf;
 hold on;
@@ -376,7 +373,7 @@ for i=numel(ids):-1:1
     id = ids(srt(i));
     row = data(srt(i),:);
     
-    if ~isnan(row(end))
+    if any(~isnan(row))
         plot(xaxis, row, 'color', getColorFromId(id));
         leg{length(leg)+1} = stat_system.getNameOfId(id);
     end
@@ -595,42 +592,128 @@ for i=1:length(reskeys)
         end
     end
     
-    for j=1:length(reskeys)
+    for j=ind+1:length(reskeys)
+        % All zeros indicate already sorted
+        if sum(reskeys{j}) == 0
+            continue;
+        end
+        
         [mm,wm] = max(msc);
         [mn,wn] = max(reskeys{j});
-        if wn < wm
+        
+        tm = sum(msc==mm);
+        tn = sum(reskeys{j}==mn);
+        
+        jbefore = false;
+        
+        % Number of tied players (less means sorted before)
+        if tn < tm
+            jbefore = true;
+        elseif tn == tm
+            % Smallest win index is sorted before
+            if any(find(msc==mm) > find(reskeys{j}==mn))
+                jbefore = true;
+            elseif all(find(msc==mm) == find(reskeys{j}==mn))
+                ri = wn+1:length(msc);
+                li = 1:wn-1;
+                
+                pm = mm*length(li) - sum(msc(li)) - (mm*length(ri) - sum(msc(ri)));
+                pn = mn*length(li) - sum(reskeys{j}(li)) - (mn*length(ri) - sum(reskeys{j}(ri)));
+                
+                % Margins to right and left pull right/left
+                if pn < pm
+                    jbefore = true;
+                elseif pm == pn
+                    
+                    % Determine if look at winners score should pull
+                    % right/left
+                    if wn <= (nsc+1)/2
+                        % Larger win value pulls left
+                        if mn > mm
+                            jbefore = true;
+                        elseif mn == mm
+                            wmn = mn - sum(reskeys{j}(li)) - sum(reskeys{j}(ri));
+                            wmm = mm - sum(msc(li)) - sum(msc(ri));
+                            % Less conceded points pulls left
+                            if wmn > wmm
+                                jbefore = true;
+                            elseif wmn == wmm
+                                pm = 0; pn = 0;
+                                
+                                if ~isempty(ri)
+                                    pm = pm + dot(msc(ri)-mm,1:length(ri));
+                                    pn = pn + dot(reskeys{j}(ri)-mn,1:length(ri));
+                                end
+                                if ~isempty(li)
+                                    pm = pm - dot(msc(li)-mm,length(li):-1:1);
+                                    pn = pn - dot(reskeys{j}(li)-mn,length(li):-1:1);
+                                end
+                                
+                                % Pull strength of conceded points
+                                if pn < pm
+                                    jbefore = true;
+                                end
+                            end
+                        end
+                    else
+                        % Larger win value pulls right
+                        if mn < mm
+                            jbefore = true;
+                        elseif mn == mm
+                            wmn = mn - sum(reskeys{j}(li)) - sum(reskeys{j}(ri));
+                            wmm = mm - sum(msc(li)) - sum(msc(ri));
+                            % Less conceded points pulls right
+                            if wmn < wmm
+                                jbefore = true;
+                            elseif wmn == wmm
+                                pm = 0; pn = 0;
+                                
+                                if ~isempty(ri)
+                                    pm = pm + dot(msc(ri)-mm,1:length(ri));
+                                    pn = pn + dot(reskeys{j}(ri)-mn,1:length(ri));
+                                end
+                                if ~isempty(li)
+                                    pm = pm - dot(msc(li)-mm,length(li):-1:1);
+                                    pn = pn - dot(reskeys{j}(li)-mn,length(li):-1:1);
+                                end
+                                % Pull strength of conceded points
+                                if pn < pm
+                                    jbefore = true;
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        
+        if jbefore
             msc = reskeys{j};
             ind = j;
-        elseif wn == wm
-            wt = (-(nsc-1)/2):((nsc-1)/2);
-            wem = dot(wt,msc);
-            wen = dot(wt,reskeys{j});
-            if wen < wem
-                msc = reskeys{j};
-                ind = j;
-            elseif wen == wem
-                if mn > mm
-                    msc = reskeys{j};
-                    ind = j;
-                end
-            end            
         end
     end
     
+    
+    
     if i==1
-        [~,lastw] = max(reskeys{ind});
+        lastw = find(reskeys{ind} == max(reskeys{ind}));
     else
-        [~, wn] = max(reskeys{ind});
-        if wn ~= lastw
+        wn = find(reskeys{ind} == max(reskeys{ind}));
+        if length(wn) ~= length(lastw) || ~all(wn == lastw)
+            
+            if length(wn) > 1 && length(lastw) == 1
+                switches(swind) = -i;
+            else
+                switches(swind) = i;
+            end
             lastw = wn;
-            switches(swind) = i;
             swind = swind+1;
         end
     end
     
     order(n) = ind;
     n = n+1;
-    reskeys{ind} = [zeros(1,nsc-1), 10000]; %#ok<AGROW>
+    reskeys{ind} = zeros(1,nsc); %#ok<AGROW>
 end
 
 reskeys = org_reskeys(order);
@@ -669,6 +752,8 @@ hold on;
 for i=1:length(switches)
     if switches(i) > 0
         plot([switches(i)-0.5, switches(i)-0.5], yl, '--r');
+    elseif switches(i) < 0
+        plot([-switches(i)-0.5, -switches(i)-0.5], yl, '-k');
     end
 end
 
@@ -737,7 +822,7 @@ end
 
 [xaxis, xaxis_label, history, x_ticklabel] = createXAxis(p.Results.xaxis, ginds, history, stat_system);
 
-[~, srt] = sort(history(:,end));
+srt = getDataSort(history);
 figure(p.Results.fig);
 clf;
 hold on;
@@ -747,7 +832,7 @@ for i=numel(ids):-1:1
     id = ids(srt(i));
     data = history(srt(i),:);
     
-    if ~isnan(data(end))
+    if any(~isnan(data))
         plot(xaxis, data, 'color', getColorFromId(id));
         leg{length(leg)+1} = stat_system.getNameOfId(id);
     end
@@ -944,6 +1029,21 @@ if isfield(p.Results,'ratingSystem')
 else
     rating_system = {};
 end
+
+end
+
+
+function srt = getDataSort(data)
+
+    tosort = NaN(size(data,1),1);
+    for i=1:size(data,1)
+        ind = find(~isnan(data(i,:)),1,'last');
+        if ~isempty(ind)
+            tosort(i) = data(i,ind);
+        end
+    end
+    
+    [~,srt] = sort(tosort);
 
 end
 
