@@ -652,7 +652,7 @@ end
         else
             
             rids = sort(stat_system.getPlayerIds(r.players),2);
-            gids = sort(g.player_ids,2);
+            gids = sort(g.player_ids.ids,2);
             
             while ~isempty(gids)
                 found = false;
@@ -697,8 +697,8 @@ for i=1:size(ids,1)
     
     id = sort(ids(i,:));
     
-    this_ginds = stat_system.game_log.filterGameIndsOnFunc(@(g) size(g.player_ids,2) == length(id) &&...
-        any(all(sort(g.player_ids,2) == kron(id,ones(size(g.player_ids,1),1)),2)), ginds);
+    this_ginds = stat_system.game_log.filterGameIndsOnFunc(@(g) size(g.player_ids.ids,2) == length(id) &&...
+        any(all(sort(g.player_ids.ids,2) == kron(id,ones(size(g.player_ids.ids,1),1)),2)), ginds);
     
     nr_played = length(this_ginds);
     if nr_played == 0

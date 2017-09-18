@@ -26,7 +26,7 @@ classdef StatSystem < handle
                 BasicEloRatingSystem('double',{'double'},{'double'},12),...
                 BasicEloRatingSystem('double master',{'double master'},{'double master'},12)];
 
-            obj.game_log = GameLog2();
+            obj.game_log = GameLog();
         end
         
         function importElostructData(obj, edata)
@@ -63,8 +63,12 @@ classdef StatSystem < handle
             savepoint = obj.createSavePoint();
             
             try
-                if ~isempty(varargin) > 0
-                    time_str = varargin{1};
+                if ~isempty(varargin)
+                    try
+                        time_str = datestr(datetime(varargin{1}));
+                    catch
+                        time_str = datestr(datetime(varargin{1},'InputFormat','HH:mm'));
+                    end
                 else
                     time_str = datestr(datetime('now'));
                 end
@@ -201,6 +205,9 @@ classdef StatSystem < handle
             for i=1:length(obj.player_names)
                 ind = find(strcmp(obj.player_names{i}, name),1,'first');
                 if ~isempty(ind)
+                    if obj.player_stops{i} >= obj.game_log.getNumberOfGames()
+                        error('Cannot remove a player before a later removal of that same player!');
+                    end
                     if obj.prompt(sprintf('Are you sure you want to remove player ''%s''?', name))
                         new_alias = max(cellfun(@(ar) max(ar), obj.player_alias_ids)) + 1;
                         obj.player_alias_ids{i} = [obj.player_alias_ids{i}, new_alias];
@@ -210,8 +217,101 @@ classdef StatSystem < handle
                 end
             end
             
-            fprintf('There is no rating system named ''%s''!\n', name);
+            fprintf('There is no player named ''%s''!\n', name);
         end
+        
+        
+        function reinstatePlayer(obj, name)     
+            
+            savepoint = obj.createSavePoint();
+            
+            try
+                game_nr = -1;
+                
+                for i=1:length(obj.player_names)
+                    ind = find(strcmp(obj.player_names{i}, name),1,'first');
+                    if ~isempty(ind)
+                        if obj.prompt(sprintf('Are you sure you want to reinstate player ''%s''?', name))
+                            nr_stops = length(obj.player_stops{i});
+                            if (nr_stops == 0) 
+                                error('Player have never been removed.');
+                            else
+                                game_nr = obj.player_stops{i}(nr_stops);
+                                obj.player_alias_ids{i} = obj.player_alias_ids{i}(1:nr_stops);
+                                obj.player_stops{i} = obj.player_stops{i}(1:nr_stops-1);
+                            end
+                        else
+                            error('User cancelled the operation.');
+                        end
+                    end
+                end
+                
+                if (game_nr < 0)
+                    error('There is no player named %s!', name);
+                end
+                                
+                total_nr = savepoint.game_log.getNumberOfGames() - game_nr;
+                changed = obj.removeGamesAfter(game_nr);
+                
+                for i=game_nr+1:savepoint.game_log.getNumberOfGames()
+                    fprintf('Processing game %u of %u...\n', i-game_nr, total_nr);
+                    changed = min(changed + obj.addGameLast(savepoint.game_log.getTypeOfGame(i),...
+                        savepoint.game_log.getPlayerNamesOfGame(i),...
+                        savepoint.game_log.getScoreOfGame(i),...
+                        savepoint.game_log.getTimeStrOfGame(i)),1);
+                end
+                
+                obj.printChange(savepoint, changed, obj.player_ids);
+                
+                if ~obj.prompt('Accept these changes?')
+                    obj.restoreSavePoint(savepoint);
+                end
+                
+            catch ME
+                fprintf('Unexpected error, no change is made!\n');
+                obj.restoreSavePoint(savepoint);
+                rethrow(ME);
+            end 
+            
+        end
+        
+        
+        function removePlayerAtGameNr(obj, name, game_nr)
+            
+           savepoint = obj.createSavePoint();
+            
+            try
+                
+                if game_nr > obj.game_log.getNumberOfGames() || game_nr < 1
+                    error('There is no game %u!', game_nr);
+                end
+                
+                total_nr = savepoint.game_log.getNumberOfGames() - game_nr;
+                changed = obj.removeGamesAfter(game_nr);
+                
+                obj.removePlayer(name);
+                
+                for i=game_nr+1:savepoint.game_log.getNumberOfGames()
+                    fprintf('Processing game %u of %u...\n', i-game_nr, total_nr);
+                    changed = min(changed + obj.addGameLast(savepoint.game_log.getTypeOfGame(i),...
+                        savepoint.game_log.getPlayerNamesOfGame(i),...
+                        savepoint.game_log.getScoreOfGame(i),...
+                        savepoint.game_log.getTimeStrOfGame(i)),1);
+                end
+                
+                obj.printChange(savepoint, changed, obj.player_ids);
+                
+                if ~obj.prompt('Accept these changes?')
+                    obj.restoreSavePoint(savepoint);
+                end
+                
+            catch ME
+                fprintf('Unexpected error, no change is made!\n');
+                obj.restoreSavePoint(savepoint);
+                rethrow(ME);
+            end 
+        end
+            
         
         
         function removeRatingSystem(obj, name)
@@ -670,7 +770,7 @@ classdef StatSystem < handle
                         id = 1;
                     end
                     if isempty(alias)
-                        alias = 100000;
+                        alias = 1000;
                     end
                     obj.player_ids = [obj.player_ids, id];
                     obj.player_alias_ids = [obj.player_alias_ids, {alias}];

@@ -765,7 +765,7 @@ end
         else
             
             rids = sort(stat_system.getPlayerIds(r.players),2);
-            gids = sort(g.player_ids,2);
+            gids = sort(g.player_ids.ids,2);
             
             while ~isempty(gids)
                 found = false;

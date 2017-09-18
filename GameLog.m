@@ -1,6 +1,6 @@
 classdef GameLog < handle
     
-    properties (GetAccess = private, SetAccess = private)
+    properties (GetAccess = public, SetAccess = private)
         
         games = [];
         

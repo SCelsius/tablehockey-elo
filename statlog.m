@@ -24,7 +24,7 @@ else
 end
 
 
-stat_system.enterGame(game, players, score, varargin);
+stat_system.enterGame(game, players, score, varargin{:});
 
 save('stats.mat','stat_system');
 
