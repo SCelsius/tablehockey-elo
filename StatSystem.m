@@ -495,24 +495,26 @@ classdef StatSystem < handle
                     row = 1;
                     history = nan(numel(player_ids),length(game_inds));
                     
-                    for j=1:numel(player_ids)
-                        len = length(obj.getAllAliases(player_ids(j)));
-                        stops = obj.getAllStops(player_ids(j));
-                        if len == 1
-                            history(j,:) = hist(row,:);
-                        else
-                            for k=1:len-1
-                                if stops(k) < to_game
-                                    ind = find(game_inds > stops(k),1,'first');
-                                    if isempty(ind)
-                                        ind = 1;
+                    if ~isempty(history)
+                        for j=1:numel(player_ids)
+                            len = length(obj.getAllAliases(player_ids(j)));
+                            stops = obj.getAllStops(player_ids(j));
+                            if len == 1
+                                history(j,:) = hist(row,:);
+                            else
+                                for k=1:len-1
+                                    if stops(k) < to_game
+                                        ind = find(game_inds > stops(k),1,'first');
+                                        if isempty(ind)
+                                            ind = 1;
+                                        end
+                                        hist(row+k-1,ind:end) = NaN;
                                     end
-                                    hist(row+k-1,ind:end) = NaN;
                                 end
+                                history(j,:) = max(hist(row:row+len-1,:));
                             end
-                            history(j,:) = max(hist(row:row+len-1,:));
+                            row = row+len;
                         end
-                        row = row+len;
                     end
                     return;
                 end

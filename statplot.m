@@ -831,9 +831,12 @@ leg = {};
 for i=numel(ids):-1:1
     id = ids(srt(i));
     data = history(srt(i),:);
+    lastnonnan = find(~isnan(data),1,'last');
     
-    if any(~isnan(data))
-        plot(xaxis, data, 'color', getColorFromId(id));
+    if ~isempty(lastnonnan)
+        plot(xaxis, data, 'color', getColorFromId(id), 'markerIndices', lastnonnan,...
+            'marker', 'o', 'markerFaceColor', getColorFromId(id), 'markerSize', 4);
+        %plot(xaxis(lastnonnan), data(lastnonnan), 'color', getColorFromId(id), 'marker', 'o', 'markerfacecolor', getColorFromId(id), 'markersize', 5); 
         leg{length(leg)+1} = stat_system.getNameOfId(id);
     end
 end

@@ -92,6 +92,7 @@ classdef BasicEloRatingSystem < RatingSystem
             clon.history = obj.history;
             clon.player_id_to_ind = obj.player_id_to_ind;
             clon.game_inds = obj.game_inds;
+            clon.start_rating = obj.start_rating;
             clon.K = obj.K;
             
         end

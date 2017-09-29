@@ -325,6 +325,7 @@ for i=1:numel(ids)
     lose_inds = 1 - min(1, win_inds + tie_inds);
     nonwin_inds = 1 - win_inds;
     nonlose_inds = 1 - lose_inds;
+    shut_inds = stat_system.game_log.getGameValues(@(ga) max(any(ga.player_ids == id,2).*(ga.score) == sum(ga.score)), this_ginds);
     
     find_win = find(win_inds);
     find_tie = find(tie_inds);
@@ -333,6 +334,7 @@ for i=1:numel(ids)
     find_nonlose = find(nonlose_inds);
     find_score = find(score_inds);
     find_nonscore = find(nonscore_inds);
+    find_shut = find(shut_inds);
     
     cs_win = [0 cumsum(diff(find_win)~=1)];
     cs_tie = [0 cumsum(diff(find_tie)~=1)];
@@ -341,6 +343,7 @@ for i=1:numel(ids)
     cs_nonlose = [0 cumsum(diff(find_nonlose)~=1)];
     cs_score = [0 cumsum(diff(find_score)~=1)];
     cs_nonscore = [0 cumsum(diff(find_nonscore)~=1)];
+    cs_shut = [0 cumsum(diff(find_shut)~=1)];
     
     [win_id, win_streak] = mode(-cs_win);
     [tie_id, tie_streak] = mode(-cs_tie);
@@ -349,6 +352,7 @@ for i=1:numel(ids)
     [nonlose_id, nonlose_streak] = mode(-cs_nonlose);
     [score_id, score_streak] = mode(-cs_score);
     [nonscore_id, nonscore_streak] = mode(-cs_nonscore);
+    [shut_id, shut_streak] = mode(-cs_shut);
     
     g_str = sprintf('%u games', nr_played);
     fprintf('--- %s (%s):\n', stat_system.getNameOfId(id), g_str);
@@ -458,6 +462,21 @@ for i=1:numel(ids)
             o_str);
     end
     
+    if shut_streak > 1
+        start = find_shut(find(cs_shut == -shut_id,1,'first'));
+        stop = start + shut_streak - 1;
+        if stop == length(this_ginds)
+            o_str = ' (ongoing)';
+        else
+            o_str = '';
+        end
+        fprintf('Shut-out streak:    %u games between %s and %s%s.\n',...
+            shut_streak,...
+            stat_system.game_log.getTimeStrOfGame(this_ginds(start)),...
+            stat_system.game_log.getTimeStrOfGame(this_ginds(stop)),...
+            o_str);
+    end
+    
     fprintf('\n');
 end
 end
@@ -492,6 +511,7 @@ for i=1:numel(ids)
     lose_inds = 1 - min(1, win_inds + tie_inds);
     nonwin_inds = 1 - win_inds;
     nonlose_inds = 1 - lose_inds;
+    shut_inds = stat_system.game_log.getGameValues(@(ga) max(any(ga.player_ids == id,2).*(ga.score) == sum(ga.score)), this_ginds);
     
     find_win = find(win_inds == 0,1,'last');
     find_tie = find(tie_inds == 0,1,'last');
@@ -500,6 +520,7 @@ for i=1:numel(ids)
     find_nonlose = find(nonlose_inds == 0,1,'last');
     find_score = find(score_inds == 0,1,'last');
     find_nonscore = find(nonscore_inds == 0,1,'last');
+    find_shut = find(shut_inds == 0,1,'last');
     
     if isempty(find_win)
         find_win = 0;
@@ -522,6 +543,9 @@ for i=1:numel(ids)
     if isempty(find_nonscore)
         find_nonscore = 0;
     end
+    if isempty(find_shut)
+        find_shut = 0;
+    end
     
     win_streak = length(win_inds) - find_win;
     tie_streak = length(tie_inds) - find_tie;
@@ -530,6 +554,7 @@ for i=1:numel(ids)
     nonlose_streak = length(nonlose_inds) - find_nonlose;
     score_streak = length(score_inds) - find_score;
     nonscore_streak = length(nonscore_inds) - find_nonscore;
+    shut_streak = length(shut_inds) - find_shut;
     
     g_str = sprintf('%u games', nr_played);
     fprintf('--- %s (%s):\n', stat_system.getNameOfId(id), g_str);
@@ -580,6 +605,13 @@ for i=1:numel(ids)
         start = find_nonscore + 1;
         fprintf('Non-scoring streak: %u games, starting at %s.\n',...
             nonscore_streak,...
+            stat_system.game_log.getTimeStrOfGame(this_ginds(start)));
+    end
+    
+    if shut_streak > 1
+        start = find_shut + 1;
+        fprintf('Shut-out streak:    %u games, starting at %s.\n',...
+            shut_streak,...
             stat_system.game_log.getTimeStrOfGame(this_ginds(start)));
     end
     
