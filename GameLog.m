@@ -163,7 +163,15 @@ classdef GameLog < handle
             desc = sprintf(fmt, obj.games(game_nr).type, plstr, scstr, datestr(obj.games(game_nr).time));
         end
         
-        
+        function str = getLogStringOfGame(obj, game_nr)
+            team_names = cell(1, size(obj.games(game_nr).player_names, 1));
+            for i=1:size(obj.games(game_nr).player_names, 1)
+                team_names{i} = strjoin(obj.games(game_nr).player_names(i,:), ', ');
+            end
+            scstr = strjoin(arrayfun(@(x) sprintf('%u',x), obj.games(game_nr).score, 'UniformOutput', false),'-');
+            str = sprintf('%s : %s : %s : %s', obj.games(game_nr).type,...
+                          strjoin(team_names,' - '), scstr, datestr(obj.games(game_nr).time, 'yyyy-mm-dd HH:MM:SS'));
+        end
         
         function nr_games = getNumberOfGames(obj)
             nr_games = length(obj.games);

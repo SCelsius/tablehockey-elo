@@ -25,6 +25,7 @@ end
 
 
 stat_system.enterGame(game, players, score, varargin{:});
+stat_system.writeTxtFile('log.txt')
 
 save('stats.mat','stat_system');
 
