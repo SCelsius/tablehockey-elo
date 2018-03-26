@@ -58,6 +58,31 @@ classdef StatSystem < handle
             end
         end
         
+        
+        function writeTxtFile(obj, filename)
+            fid = fopen(filename, 'w');
+            for i=1:obj.game_log.getNumberOfGames()
+                fprintf(fid, obj.game_log.getLogStringOfGame(i));
+                fprintf(fid, '\n');
+                for j=1:size(obj.player_stops, 2)
+                    if any(obj.player_stops{j} == i)
+                        if i < obj.game_log.getNumberOfGames()
+                            t1 = obj.game_log.games(i).time;
+                            t2 = obj.game_log.games(i+1).time;
+                            date_str = datestr(t1+(t2-t1)/2, 'yyyy-mm-dd HH:MM:SS');
+                        else
+                            date_str = datestr(obj.game_log.games(i).time, 'yyyy-mm-dd HH:MM:SS');
+                        end
+                        fprintf(fid,'break : %s : %s\n',...
+                            obj.player_names{j},...
+                            date_str);
+                    end
+                end
+            end
+            fclose(fid);
+        end
+        
+        
         function enterGame(obj, type, player_names, score, varargin)
             
             savepoint = obj.createSavePoint();
