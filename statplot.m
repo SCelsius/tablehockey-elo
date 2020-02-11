@@ -826,7 +826,7 @@ srt = getDataSort(history);
 figure(p.Results.fig);
 clf;
 hold on;
-title(sprintf('History of rating system ''%s''', rating_system));
+title(sprintf('History of rating system ''%s''', rating_system),'FontSize', 24);
 leg = {};
 for i=numel(ids):-1:1
     id = ids(srt(i));
@@ -840,9 +840,10 @@ for i=numel(ids):-1:1
         leg{length(leg)+1} = stat_system.getNameOfId(id);
     end
 end
-xlabel(xaxis_label);
-ylabel('Rating');
-l=legend(leg,'location','bestOutside');
+xlabel(xaxis_label,'FontSize', 24);
+ylabel('Rating','FontSize', 24);
+l=legend(leg,'location','bestOutside','FontSize', 24);
+grid on
 set(l,'fontSize',16)
 if ~isempty(x_ticklabel)
     set(gca,'xtick',xaxis);
